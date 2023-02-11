@@ -1,13 +1,19 @@
 require("dotenv").config();
 const express = require("express");
+const bodyParser = require("body-parser");
+const { Server } = require("socket.io");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
+const io = new Server({
+  cors: true,
+});
 const port = process.env.PORT || 5000;
-
 const cors = require("cors");
 
 app.use(cors());
 app.use(express.json());
+app.use(bodyParser.json());
+
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.q66zrl2.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, {
@@ -146,6 +152,34 @@ const run = async () => {
 
       res.send({ status: true, data: result });
     });
+
+    //socket
+    const emailToSocketMapping = new Map();
+    const socketToEmailMapping = new Map();
+
+    io.on("connection", (socket) => {
+      // console.log('new connection')
+      socket.on("join-room", (data) => {
+        const { roomId, emailId } = data;
+        console.log("user", emailId, "Joined room with", roomId);
+        emailToSocketMapping.set(emailId, socket.id);
+        socketToEmailMapping.set(socket.id, emailId);
+        socket.join(roomId);
+        socket.emit("joined-room", { roomId });
+        socket.broadcast.to(roomId).emit("user-joined", { emailId });
+      });
+      socket.on("call-user", (data) => {
+        const { emailId, offer } = data;
+        const fromEmail = socketToEmailMapping.get(socket.id);
+        const socketId = emailToSocketMapping.get(emailId);
+        socket.to(socketId)?.emit("incoming-call", { from: fromEmail, offer });
+      });
+      socket.on("call-accepted", (data) => {
+        const { emailId, ans } = data;
+        const socketId = emailToSocketMapping.get(emailId);
+        socket.to(socketId).emit("call-accepted", { ans });
+      });
+    });
   } finally {
   }
 };
@@ -159,3 +193,4 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });
+io.listen(8001);
