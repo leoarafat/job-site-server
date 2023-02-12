@@ -23,8 +23,8 @@ const client = new MongoClient(uri, {
 
 const run = async () => {
   try {
-    const db = client.db("jobbox");
-    const userCollection = db.collection("user");
+    const db = client.db("jobBox");
+    const userCollection = db.collection("users");
     const jobCollection = db.collection("job");
 
     app.post("/user", async (req, res) => {
@@ -37,7 +37,6 @@ const run = async () => {
 
     app.get("/user/:email", async (req, res) => {
       const email = req.params.email;
-
       const result = await userCollection.findOne({ email });
 
       if (result?.email) {
@@ -47,89 +46,7 @@ const run = async () => {
       res.send({ status: false });
     });
 
-    app.patch("/apply", async (req, res) => {
-      const userId = req.body.userId;
-      const jobId = req.body.jobId;
-      const email = req.body.email;
-
-      const filter = { _id: ObjectId(jobId) };
-      const updateDoc = {
-        $push: { applicants: { id: ObjectId(userId), email } },
-      };
-
-      const result = await jobCollection.updateOne(filter, updateDoc);
-
-      if (result.acknowledged) {
-        return res.send({ status: true, data: result });
-      }
-
-      res.send({ status: false });
-    });
-
-    app.patch("/query", async (req, res) => {
-      const userId = req.body.userId;
-      const jobId = req.body.jobId;
-      const email = req.body.email;
-      const question = req.body.question;
-
-      const filter = { _id: ObjectId(jobId) };
-      const updateDoc = {
-        $push: {
-          queries: {
-            id: ObjectId(userId),
-            email,
-            question: question,
-            reply: [],
-          },
-        },
-      };
-
-      const result = await jobCollection.updateOne(filter, updateDoc);
-
-      if (result?.acknowledged) {
-        return res.send({ status: true, data: result });
-      }
-
-      res.send({ status: false });
-    });
-
-    app.patch("/reply", async (req, res) => {
-      const userId = req.body.userId;
-      const reply = req.body.reply;
-      console.log(reply);
-      console.log(userId);
-
-      const filter = { "queries.id": ObjectId(userId) };
-
-      const updateDoc = {
-        $push: {
-          "queries.$[user].reply": reply,
-        },
-      };
-      const arrayFilter = {
-        arrayFilters: [{ "user.id": ObjectId(userId) }],
-      };
-
-      const result = await jobCollection.updateOne(
-        filter,
-        updateDoc,
-        arrayFilter
-      );
-      if (result.acknowledged) {
-        return res.send({ status: true, data: result });
-      }
-
-      res.send({ status: false });
-    });
-
-    app.get("/applied-jobs/:email", async (req, res) => {
-      const email = req.params.email;
-      const query = { applicants: { $elemMatch: { email: email } } };
-      const cursor = jobCollection.find(query).project({ applicants: 0 });
-      const result = await cursor.toArray();
-
-      res.send({ status: true, data: result });
-    });
+   
 
     app.get("/jobs", async (req, res) => {
       const cursor = jobCollection.find({});
@@ -150,34 +67,6 @@ const run = async () => {
       const result = await jobCollection.insertOne(job);
 
       res.send({ status: true, data: result });
-    });
-
-    //socket
-    const emailToSocketMapping = new Map();
-    const socketToEmailMapping = new Map();
-
-    io.on("connection", (socket) => {
-      // console.log('new connection')
-      socket.on("join-room", (data) => {
-        const { roomId, emailId } = data;
-        console.log("user", emailId, "Joined room with", roomId);
-        emailToSocketMapping.set(emailId, socket.id);
-        socketToEmailMapping.set(socket.id, emailId);
-        socket.join(roomId);
-        socket.emit("joined-room", { roomId });
-        socket.broadcast.to(roomId).emit("user-joined", { emailId });
-      });
-      socket.on("call-user", (data) => {
-        const { emailId, offer } = data;
-        const fromEmail = socketToEmailMapping.get(socket.id);
-        const socketId = emailToSocketMapping.get(emailId);
-        socket.to(socketId)?.emit("incoming-call", { from: fromEmail, offer });
-      });
-      socket.on("call-accepted", (data) => {
-        const { emailId, ans } = data;
-        const socketId = emailToSocketMapping.get(emailId);
-        socket.to(socketId).emit("call-accepted", { ans });
-      });
     });
   } finally {
   }
